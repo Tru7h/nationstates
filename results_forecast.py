@@ -12,38 +12,58 @@ float_grp = r'([-+]?\d+\.?\d*)'
 effect_pattern = re.compile(r'{num} to {num} (.+) \(mean {num}\)'.format(num=float_grp))
 simple_pattern = re.compile(r'{num} (.+)'.format(num=float_grp))
 
-def get_options(arg, nation=None, issue=None, review_thresh='.84'):
+def get_options(nation=None, issue=None, print_bias='.4', result_thresh=None):
     if nation is None:
-        assert __name__ == '__main__'
         nation = input('nation: ')
     if issue is None:
-        assert __name__ == '__main__'
         issue = input('issue: ')
-    if review_thresh:
-        thresh = decimal.Decimal(review_thresh)
+
+    scales_df, options = build_dataframes(nation, issue, result_thresh)
+
+    scales_df.dropna(thresh=2, inplace=True)
+    scales_df['sort'] = pandas.Series(abs(scales_df.bias) + (scales_df.bias > 0) / 200, scales_df.index)
+    scales_df = scales_df.sort_values(by='sort', ascending=False).drop(['sort'], 1).fillna(0)
+    with pandas.option_context('display.max_colwidth', -1):
+        print('\n' + scales_df[abs(scales_df.bias) > decimal.Decimal(print_bias)].to_string())
+        print('\n' + options.to_string(index=False))
+    print('\nhttps://nsindex.net/wiki/NationStates_Issue_No._{issue}\n'.format(issue=issue))
+
+def build_dataframes(nation, issue, result_thresh):
     scales_file = pathlib.Path(nation + '_category_scale.csv')
     assert scales_file.is_file(), str(scales_file)
-    scales_df = pandas.read_csv(scales_file, header=None, index_col=False)
-    category_scales = dict(scales_df.itertuples(index=False))
-    scales_df.columns=('census', 'bias')
+    scales_df = pandas.read_csv(scales_file, names=('census', 'bias'), index_col='census')
+    category_scales = scales_df.to_dict()['bias']
+
+    policies_file = pathlib.Path(nation + '_policy_exclusions.csv')
+    if policies_file.is_file():
+        df = pandas.read_csv(policies_file, names=('policy', 'change')).dropna()
+        exclusions = tuple('{change} policy: {policy}'.format(**row) for row in df.to_dict('records'))
+    else:
+        exclusions = ()
 
     url = 'http://www.mwq.dds.nl/ns/results/{issue}.html'
     page = requests.get(url.format(issue=issue), headers = {'content-type': 'text/html'})
 
     doc = lxml.html.fromstring(page.content)
     tr_elements = doc.xpath('//tr')
-    options = pandas.DataFrame(columns=['option', 'net result'])
-    for option, effects, _ in tr_elements[1:]:
-        if thresh <= max(scales_df.bias):
-            print('\nWeighing option {num}'.format(num=option.text_content()[1:]))
-        weight, extras = weigh_option(effects, category_scales, thresh)
-        option_summary = {'option': option.text_content()[1:].split(' ', 1)[0], 'net result': weight, **extras}
-        options = options.append(option_summary, ignore_index=True)
+    options = pandas.DataFrame(columns=['option', 'net_result'])
+    for result, effects, _ in tr_elements[1:]:
+        choice, headline = result.text_content()[1:].split(' ', 1)
+        deltas, unparsed_strs = weigh_option(effects)
+        if any(excluded in unparsed_strs for excluded in exclusions):
+            continue
+        weight = sum(category_scales[category] * normalized_effect for category, normalized_effect in deltas)
+        if result_thresh is not None and weight < float(result_thresh):
+            continue
+        scales_df[choice] = scales_df.index.map(dict(deltas))
+        extras = split_unparsed_strings(unparsed_strs)
+        headlines = headline.replace('@@NAME@@', nation.title()).split('\n')
+        for headline in headlines:
+            option_summary = dict(option=choice, net_result=weight, headline=headline, **extras)
+            options = options.append(option_summary, ignore_index=True)
+    return scales_df, options
 
-    with pandas.option_context('display.max_colwidth', -1):
-        print('\n' + options.to_string(index=False))
-
-def weigh_option(effects, category_scales, thresh):
+def weigh_option(effects):
     results = []
     unparsed_strs = []
     for effect in effects:
@@ -51,9 +71,9 @@ def weigh_option(effects, category_scales, thresh):
         regular = effect_pattern.search(effect_str)
         simple = simple_pattern.search(effect_str)
         if regular:
-            low, high, category, mean = regular.groups()
-            numer = sum(float(vl) for vl in (high, mean, low))/3
-            denom = float(high) - float(low)
+            low, high, category, mean = (tryfloat(vl) for vl in regular.groups())
+            numer = (high + mean + low)/3
+            denom = (high if high > 0 else 0) - (low if low < 0 else 0)
             normalized_effect =  numer / denom
         elif simple:
             mean, category = simple.groups()
@@ -61,21 +81,14 @@ def weigh_option(effects, category_scales, thresh):
         else:
             unparsed_strs.append(effect_str)
             continue
-        results.append((category, normalized_effect, category_scales[category]))
-    net_result = summarize_results(results, thresh)
-    extras = split_unparsed_strings(unparsed_strs)
-    return net_result, extras
+        results.append((category, normalized_effect))
+    return results, unparsed_strs
 
-def summarize_results(results, thresh):
-    net_result = 0
-    sorted_results = sorted(results, key=lambda effect: (-abs(effect[2]), effect[2] < 0))
-    for category, normalized_effect, bias in sorted_results:
-        delta = normalized_effect * bias
-        net_result += delta
-        if abs(bias) < thresh:
-            continue
-        print('{category}: {delta:.4f}'.format(category=category, delta=delta))
-    return net_result
+def tryfloat(string):
+    try:
+        return float(string)
+    except ValueError:
+        return string
 
 def split_unparsed_strings(unparsed_strs):
     extras = {}
@@ -88,4 +101,4 @@ def split_unparsed_strings(unparsed_strs):
     return extras
 
 if __name__ == '__main__':
-    get_options(*sys.argv)
+    get_options(*sys.argv[1:])
