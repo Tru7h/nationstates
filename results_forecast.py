@@ -21,20 +21,27 @@ def get_options(nation=None, issue=None, minimum=None):
         nation = input('nation: ')
     if issue is None:
         issue = input('issue: ')
-        if minimum is None:
-            minimum = input('minimum: ') or None
 
-    scales_df, options = build_dataframes(nation, issue, minimum)
+    url = 'http://www.mwq.dds.nl/ns/results/{issue}.html'
+    page = requests.get(url.format(issue=issue), headers = {'content-type': 'nation/achievement_hunters'})
 
-    scales_df.dropna(thresh=2, inplace=True)
-    scales_df['sort'] = pandas.Series(abs(scales_df.bias) + (scales_df.bias > 0) / 200, scales_df.index)
-    scales_df = scales_df.sort_values(by='sort', ascending=False).drop(['sort'], 1).fillna(0)
-    with pandas.option_context('display.max_colwidth', -1):
-        logger.info(scales_df[abs(scales_df.bias) > 0].head(18).to_string())
-        logger.info(options.to_string(index=False))
+    doc = lxml.html.fromstring(page.content)
+
+    while True:
+        scales_df, options = build_dataframes(nation, doc, minimum)
+
+        scales_df.dropna(thresh=2, inplace=True)
+        scales_df['sort'] = pandas.Series(abs(scales_df.bias) + (scales_df.bias > 0) / 200, scales_df.index)
+        scales_df = scales_df.sort_values(by='sort', ascending=False).drop(['sort'], 1).fillna(0)
+        with pandas.option_context('display.max_colwidth', -1):
+            logger.info(scales_df[abs(scales_df.bias) > 0].head(18).to_string())
+            logger.info(options.to_string(index=False))
+        minimum = input('\n' + 'minimum: ') or None
+        if not minimum:
+            break
     logger.info('https://nsindex.net/wiki/NationStates_Issue_No._{issue}\n'.format(issue=issue))
 
-def build_dataframes(nation, issue, minimum):
+def build_dataframes(nation, doc, minimum):
     scales_file = pathlib.Path(nation + '_category_scale.csv')
     assert scales_file.is_file(), str(scales_file)
     scales_df = pandas.read_csv(scales_file, names=('census', 'bias'), index_col='census')
@@ -47,10 +54,6 @@ def build_dataframes(nation, issue, minimum):
     else:
         exclusions = ()
 
-    url = 'http://www.mwq.dds.nl/ns/results/{issue}.html'
-    page = requests.get(url.format(issue=issue), headers = {'content-type': 'nation/achievement_hunters'})
-
-    doc = lxml.html.fromstring(page.content)
     title, = doc.xpath('//title')
     logger.info(title.text_content())
     cols = 'option,datums,net_result,headline'.split(',')
@@ -62,12 +65,12 @@ def build_dataframes(nation, issue, minimum):
             continue
         choice, headline = result.text_content()[1:].split(' ', 1)
         deltas, unparsed_strs = weigh_option(effects)
-        if any(excluded in unparsed_strs for excluded in exclusions):
-            continue
         weight = sum(category_scales[category] * deltas[category] for category in deltas)
         if minimum is not None and weight < float(minimum):
             continue
         scales_df[choice] = [deltas.get(category) for category in scales_df.index]
+        if any(excluded in unparsed_strs for excluded in exclusions):
+            choice = ''
         extras = split_unparsed_strings(unparsed_strs)
         cols.extend(key for key in extras if key not in cols)
         headlines = headline.replace('@@NAME@@', nation.title()).split('\n')
