@@ -1,8 +1,6 @@
 ''' attempt to forecast best option from probable effects '''
-import decimal
 import logging
 import pathlib
-import random
 import sys
 import re
 
@@ -16,7 +14,7 @@ simple_pattern = re.compile('^{num} {census}$'.format(**ptrn_grps))
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-def get_options(nation=None, issue=None, minimum=None):
+def get_options(nation=None, issue=None):
     if nation is None:
         nation = input('nation: ')
     if issue is None:
