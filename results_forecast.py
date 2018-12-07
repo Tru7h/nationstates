@@ -32,8 +32,16 @@ def get_options(nation=None, issue=None, minimum=None):
         scales_df, options = build_dataframes(nation, doc, excluded)
 
         scales_df.dropna(thresh=2, inplace=True)
-        scales_df['sort'] = pandas.Series(abs(scales_df.bias) + (scales_df.bias > 0) / 200, scales_df.index)
-        scales_df = scales_df.sort_values(by='sort', ascending=False).drop(['sort'], 1).fillna(0)
+        if not options.empty:
+            viable_options = options[options.option!='']
+            viable_options = options[:1] if viable_options.empty else viable_options
+            top_option, = options.option[options.net_result==max(viable_options.net_result)]
+            scales_df['top_option'] = pandas.Series(abs(scales_df[top_option]), scales_df.index)
+            scales_df['magnitude'] = pandas.Series(abs(scales_df.bias), scales_df.index)
+            scales_df['direction'] = pandas.Series(scales_df.bias > 0, scales_df.index)
+            sort_cols = ['magnitude', 'direction', 'top_option']
+            scales_df.sort_values(by=sort_cols, ascending=False, inplace=True)
+            scales_df = scales_df.drop(sort_cols, 1).fillna(0)
         with pandas.option_context('display.max_colwidth', -1):
             logger.info(scales_df[abs(scales_df.bias) > 0].to_string())
             logger.info(options.to_string(index=False))
@@ -56,8 +64,8 @@ def build_dataframes(nation, doc, excluded_options):
 
     policies_file = pathlib.Path(nation + '_policy_exclusions.csv')
     if policies_file.is_file():
-        df = pandas.read_csv(policies_file, names=('policy', 'change')).dropna()
-        excluded_policy_reforms = tuple('{change} policy: {policy}'.format(**row) for row in df.to_dict('records'))
+        df = pandas.read_csv(policies_file, names=('policy', 'change')).dropna().to_dict('records')
+        excluded_policy_reforms = tuple('{change} policy: {policy}'.format(**row) for row in df)
     else:
         excluded_policy_reforms = ()
 
@@ -69,7 +77,7 @@ def build_dataframes(nation, doc, excluded_options):
         datums = observations.text_content().strip().splitlines() or '0'
         datums = int(min(cnt for cnt in datums if '-' not in cnt))
         option, headline = result.text_content()[1:].split(' ', 1)
-        if datums < 1 or option.replace('.', '') in excluded_options:
+        if datums < 1 or any(excluded in option for excluded in excluded_options):
             continue
         deltas, unparsed_strs = weigh_option(effects)
         weight = sum(category_scales[category] * deltas[category] for category in deltas)
@@ -94,9 +102,9 @@ def weigh_option(effects):
         simple = simple_pattern.search(effect_str)
         if regular:
             low, high, category, mean = (tryfloat(vl) for vl in regular.groups())
-            numer = high + mean + low
+            numer = max(high, 0) + mean + min(low, 0)
             denom = max(high, 0) - min(low, 0)
-            results[category] = numer / denom / 3
+            results[category] = numer / denom / 2
         elif simple:
             mean, category = simple.groups()
             results[category] = (float(mean) > 0) - (float(mean) < 0)
