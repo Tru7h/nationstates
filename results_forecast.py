@@ -99,10 +99,8 @@ def weigh_option(effects):
         regular = effect_pattern.search(effect_str)
         simple = simple_pattern.search(effect_str)
         if regular:
-            low, high, category, mean = (tryfloat(vl) for vl in regular.groups())
-            numer = max(high, 0) + mean + min(low, 0)
-            denom = max(high, 0) - min(low, 0)
-            results[category] = numer / denom / 2
+            category, delta = parse_regular_pattern(regular)
+            results[category] = delta
         elif simple:
             mean, category = simple.groups()
             results[category] = (float(mean) > 0) - (float(mean) < 0)
@@ -110,11 +108,15 @@ def weigh_option(effects):
             unparsed_strs.append(effect_str)
     return results, unparsed_strs
 
-def tryfloat(string):
-    try:
-        return float(string)
-    except ValueError:
-        return string
+def parse_regular_pattern(regular):
+    low = min(float(regular.group(1)), 0)
+    high = max(float(regular.group(2)), 0)
+    census = regular.group(3)
+    mean = float(regular.group(4))
+    numer = high + mean + low
+    denom = high - low
+    delta = numer / denom / 2
+    return census, delta
 
 def split_unparsed_strings(unparsed_strs):
     extras = {}
