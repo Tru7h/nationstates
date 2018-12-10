@@ -22,6 +22,7 @@ def get_options(nation=None, issue=None):
 
     url = 'http://www.mwq.dds.nl/ns/results/{issue}.html'
     page = requests.get(url.format(issue=issue), headers = {'content-type': 'text/html'})
+    census_filter = True
 
     doc = lxml.html.fromstring(page.content)
     excluded = set()
@@ -31,28 +32,32 @@ def get_options(nation=None, issue=None):
 
         scales_df.dropna(thresh=2, inplace=True)
         if not options.empty:
-            viable_options = options[options.option!='']
-            viable_options = options[:1] if viable_options.empty else viable_options
-            top_option, = options.option[options.net_result==max(viable_options.net_result)]
-            scales_df['top_option'] = pandas.Series(abs(scales_df[top_option]), scales_df.index)
             scales_df['magnitude'] = pandas.Series(abs(scales_df.bias), scales_df.index)
             scales_df['direction'] = pandas.Series(scales_df.bias > 0, scales_df.index)
-            sort_cols = ['magnitude', 'direction', 'top_option']
+            sort_cols = ['magnitude', 'direction']
+            viable_options = options[options.option!='']
+            viable_options = options[:1] if viable_options.empty else viable_options
+            for index, option in enumerate(viable_options.sort_values(by='net_result', ascending=False).option):
+                scales_df['preferred_%d' % index] = pandas.Series(abs(scales_df[option]), scales_df.index)
+                sort_cols.append('preferred_%d' % index)
             scales_df.sort_values(by=sort_cols, ascending=False, inplace=True)
             scales_df = scales_df.drop(sort_cols, 1).fillna(0)
         with pandas.option_context('display.max_colwidth', -1):
-            logger.info(scales_df[abs(scales_df.bias) > 0].to_string())
+            scales_df = scales_df[scales_df.bias != 0] if census_filter else scales_df
+            logger.info(scales_df.to_string())
             logger.info(options.to_string(index=False))
-        option = input('\n' + 'select option to drop, restore, or reset all with 0: ')
+            logger.info('https://nsindex.net/wiki/NationStates_Issue_No._{issue}\n'.format(issue=issue))
+        option = input('drop/restore an option or toggle null bias with "f": ')
         if not option:
             break
         elif option == '0':
             excluded = set()
+        elif option == 'f':
+            census_filter = not census_filter
         elif option in excluded:
             excluded.remove(option)
         else:
             excluded.add(option)
-    logger.info('https://nsindex.net/wiki/NationStates_Issue_No._{issue}\n'.format(issue=issue))
 
 def build_dataframes(nation, doc, excluded_options):
     scales_file = pathlib.Path(nation + '_category_scale.csv')
