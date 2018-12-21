@@ -26,6 +26,7 @@ def get_options(nation=None, issue=None):
 
     doc = lxml.html.fromstring(page.content)
     excluded = set()
+    cumsum = False
 
     while True:
         scales_df, options = build_dataframes(nation, doc, excluded)
@@ -37,23 +38,35 @@ def get_options(nation=None, issue=None):
             sort_cols = ['magnitude', 'direction']
             viable_options = options[options.option!='']
             viable_options = options[:1] if viable_options.empty else viable_options
-            for index, option in enumerate(viable_options.sort_values(by='net_result', ascending=False).option):
-                scales_df['preferred_%d' % index] = pandas.Series(abs(scales_df[option]), scales_df.index)
-                sort_cols.append('preferred_%d' % index)
+            for option in viable_options.sort_values(by='net_result', ascending=False).option:
+                scales_df['abs_' + option] = pandas.Series(abs(scales_df[option]), scales_df.index)
+                sort_cols.append('abs_' + option)
             scales_df.sort_values(by=sort_cols, ascending=False, inplace=True)
             scales_df = scales_df.drop(sort_cols, 1).fillna(0)
+        if cumsum:
+            bias_col, *option_cols = scales_df.columns
+            for option in option_cols:
+                scales_df[option] = (scales_df[bias_col] * scales_df[option]).cumsum()
         with pandas.option_context('display.max_colwidth', -1):
             scales_df = scales_df[scales_df.bias != 0] if census_filter else scales_df
             logger.info(scales_df.to_string())
             logger.info(options.to_string(index=False))
             logger.info('https://nsindex.net/wiki/NationStates_Issue_No._{issue}\n'.format(issue=issue))
-        option = input('drop/restore an option or toggle null bias with "f": ')
+        option = input(
+            '"f" > toggle zero bias\n'
+            '"c" > toggle cumulative summation\n'
+            '"1-9" > drop/restore option\n'
+            '"0" > reset options\n'
+            '"" > exit\n'
+            '>> ')
         if not option:
             break
         elif option == '0':
             excluded = set()
         elif option == 'f':
             census_filter = not census_filter
+        elif option == 'c':
+            cumsum = not cumsum
         elif option in excluded:
             excluded.remove(option)
         else:
@@ -114,12 +127,12 @@ def weigh_option(effects):
     return results, unparsed_strs
 
 def parse_regular_pattern(regular):
-    low = min(float(regular.group(1)), 0)
-    high = max(float(regular.group(2)), 0)
+    low = float(regular.group(1))
+    high = float(regular.group(2))
     census = regular.group(3)
     mean = float(regular.group(4))
     numer = high + mean + low
-    denom = high - low
+    denom = max(high, 0) - min(low, 0)
     delta = numer / denom / 2
     return census, delta
 
