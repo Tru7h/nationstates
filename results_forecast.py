@@ -14,10 +14,10 @@ simple_pattern = re.compile('^{num} {census}$'.format(**ptrn_grps))
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-def get_options(nation=None, issue=None):
-    if nation is None:
+def get_options(nation: str=None, issue: str=None):
+    while nation is None or not nation.isalnum():
         nation = input('nation: ')
-    if issue is None:
+    while issue is None or not issue.isdecimal():
         issue = input('issue: ')
 
     url = 'http://www.mwq.dds.nl/ns/results/{issue}.html'
@@ -76,7 +76,7 @@ def summarize_results(scales_df, options, census_filter, cumsum):
 
 def build_dataframes(nation, doc, excluded):
     scales_file = pathlib.Path(nation + '_category_scale.csv')
-    assert scales_file.is_file(), str(scales_file)
+    assert scales_file.is_file(), scales_file.name
     scales_df = pandas.read_csv(scales_file, names=('census', 'bias'), index_col='census')
     category_scales = scales_df.to_dict('dict')['bias']
 
@@ -93,7 +93,9 @@ def build_dataframes(nation, doc, excluded):
     options = pandas.DataFrame(columns=cols)
     for result, effects, observations in doc.xpath('//tr')[1:]:
         datums = observations.text_content().strip().splitlines() or '0'
-        datums = int(min(cnt for cnt in datums if '-' not in cnt))
+        datums, *extras = set(cnt for cnt in datums if '-' not in cnt)
+        assert not extras, observations.text_content()
+        datums = int(datums)
         option_text, headline = result.text_content()[1:].split(' ', 1)
         if datums < 1 or any(digit in option_text for digit in excluded):
             continue
@@ -140,21 +142,24 @@ def parse_regular_pattern(regular):
 
 def split_unparsed_strings(unparsed_strs):
     extras = {}
+    extra: str
     for extra in unparsed_strs:
         if ' policy: ' in extra:
             behavior, policy = extra.split(' policy: ')
+        elif extra.endswith(' the World Assembly'):
+            behavior, policy = extra.split(' the ')
         else:
             behavior, policy = extra.rsplit(' ', 1)
         extras[policy] = behavior
     return extras
 
-def main():
+def main(level=logging.INFO):
     c_handler = logging.StreamHandler()
-    c_handler.setLevel(logging.INFO)
+    c_handler.setLevel(level)
     c_format = logging.Formatter('\n%(message)s')
     c_handler.setFormatter(c_format)
     logger.addHandler(c_handler)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(level)
     get_options(*sys.argv[1:])
 
 if __name__ == '__main__':
