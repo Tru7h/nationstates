@@ -1,6 +1,7 @@
 ''' attempt to forecast best option from probable effects '''
 import logging
 import pathlib
+import random
 import sys
 import re
 
@@ -8,6 +9,7 @@ import requests
 import lxml.html
 import pandas
 
+REQUEST_HEADERS = {'content-type': 'text/html'}
 ptrn_grps = dict(num=r'([-+]?\d+(?:\.\d+)?)', census=r'([^\.\d]+)')
 effect_pattern = re.compile('^{num} to {num} {census} \(mean {num}\)$'.format(**ptrn_grps))
 simple_pattern = re.compile('^{num} {census}$'.format(**ptrn_grps))
@@ -15,13 +17,24 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 def get_options(nation: str=None, issue: str=None):
+    url = 'http://www.mwq.dds.nl/ns/results/'
     while nation is None or not nation.isalnum():
         nation = input('nation: ')
+        scales_file = pathlib.Path(nation + '_category_scale.csv')
+        if scales_file.is_file():
+            break
+        logger.error('Category csv for nationstate: "%s" not found.', nation)
+        nation = None
     while issue is None or not issue.isdecimal():
         issue = input('issue: ')
+        if issue != '?':
+            continue
+        page = requests.get(url, headers=REQUEST_HEADERS)
+        doc = lxml.html.fromstring(page.content)
+        regex = re.findall('#(\d+) [^\?]', doc.text_content())
+        issue = random.choice(regex)
 
-    url = 'http://www.mwq.dds.nl/ns/results/{issue}.html'
-    page = requests.get(url.format(issue=issue), headers = {'content-type': 'text/html'})
+    page = requests.get(url + '{issue}.html'.format(issue=issue), headers=REQUEST_HEADERS)
     census_filter = True
 
     doc = lxml.html.fromstring(page.content)
