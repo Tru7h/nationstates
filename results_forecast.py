@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 def get_options(nation: str=None, issue: str=None):
-    url = 'http://www.mwq.dds.nl/ns/results/'
     while nation is None or not nation.isalnum():
         nation = input('nation: ')
         scales_file = pathlib.Path(nation + '_category_scale.csv')
@@ -29,41 +28,55 @@ def get_options(nation: str=None, issue: str=None):
         issue = input('issue: ')
         if issue != '?':
             continue
-        page = requests.get(url, headers=REQUEST_HEADERS)
-        doc = lxml.html.fromstring(page.content)
-        regex = re.findall('#(\d+) [^\?]', doc.text_content())
-        issue = random.choice(regex)
-
-    page = requests.get(url + '{issue}.html'.format(issue=issue), headers=REQUEST_HEADERS)
-    census_filter = True
-
-    doc = lxml.html.fromstring(page.content)
-    excluded = set()
-    cumsum = False
+        break
+    option = 'n ' + issue
 
     while True:
-        scales_df, options = build_dataframes(nation, doc, excluded)
-        summarize_results(scales_df, options, census_filter, cumsum)
-        logger.info('https://nsindex.net/wiki/NationStates_Issue_No._{issue}\n'.format(issue=issue))
-        option = input(
-            '"f" > toggle zero bias\n'
-            '"c" > toggle cumulative summation\n'
-            '"1-9" > drop/restore option\n'
-            '"0" > reset options\n'
-            '"" > exit\n'
-            '>> ')
-        if not option:
-            break
+        match = re.search('n (\d{1,4}|\?)', option)
+        if match:
+            issue, doc = get_issue(match)
+            census_filter = True
+            excluded = set()
+            cumsum = False
         elif option == '0':
             excluded = set()
         elif option == 'f':
             census_filter = not census_filter
         elif option == 'c':
             cumsum = not cumsum
+        elif option == 'e':
+            break
         elif option in excluded:
             excluded.remove(option)
         else:
             excluded.add(option)
+        scales_df, options = build_dataframes(nation, doc, excluded)
+        summarize_results(scales_df, options, census_filter, cumsum)
+        logger.info('https://nsindex.net/wiki/NationStates_Issue_No._{issue}\n'.format(issue=issue))
+        option = None
+        while not option:
+            option = input(
+                '"f" > toggle zero bias\n'
+                '"c" > toggle cumulative summation\n'
+                '"n (\d{1,4}|\?)" > reset with new issue number\n'
+                '"1-9" > drop/restore option\n'
+                '"0" > reset options\n'
+                '"e" > exit\n'
+                '>> ')
+
+def get_issue(match):
+    url = 'http://www.mwq.dds.nl/ns/results/'
+    issue, *extras = match.groups()
+    assert not extras
+    if issue == '?':
+        page = requests.get(url, headers=REQUEST_HEADERS)
+        doc = lxml.html.fromstring(page.content)
+        regex = re.findall('#(\d+) [^\?]', doc.text_content())
+        issue = random.choice(regex)
+
+    page = requests.get(url + '{issue}.html'.format(issue=issue), headers=REQUEST_HEADERS)
+    doc = lxml.html.fromstring(page.content)
+    return issue, doc
 
 def summarize_results(scales_df, options, census_filter, cumsum):
     scales_df.dropna(thresh=2, inplace=True)
@@ -100,8 +113,9 @@ def build_dataframes(nation, doc, excluded):
     else:
         excluded_policy_reforms = ()
 
-    title, = doc.xpath('//title')
-    logger.info(title.text_content())
+    title, *extras = doc.xpath('//title')
+    assert not extras
+    logger.info(title.text)
     cols = 'option,datums,net_result,headline'.split(',')
     options = pandas.DataFrame(columns=cols)
     for result, effects, observations in doc.xpath('//tr')[1:]:
@@ -158,9 +172,11 @@ def split_unparsed_strings(unparsed_strs):
     extra: str
     for extra in unparsed_strs:
         if ' policy: ' in extra:
-            behavior, policy = extra.split(' policy: ')
+            behavior, policy = extra.split(' policy: ', 1)
         elif extra.endswith(' the World Assembly'):
-            behavior, policy = extra.split(' the ')
+            behavior, policy = extra.rsplit(' the ', 1)
+        elif extra.startswith('leads to '):
+            policy, behavior = extra.rsplit(' ', 1)
         else:
             behavior, policy = extra.rsplit(' ', 1)
         extras[policy] = behavior
