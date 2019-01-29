@@ -80,15 +80,11 @@ def get_issue(match):
 
 def summarize_results(scales_df, options, census_filter, cumsum):
     scales_df.dropna(thresh=2, inplace=True)
+    scales_df.sort_index(inplace=True)
     if not options.empty:
         scales_df['magnitude'] = pandas.Series(abs(scales_df.bias), scales_df.index)
         scales_df['direction'] = pandas.Series(scales_df.bias > 0, scales_df.index)
         sort_cols = ['magnitude', 'direction']
-        viable_options = options[options.option!='']
-        viable_options = options[:1] if viable_options.empty else viable_options
-        for option in viable_options.sort_values(by='net_result', ascending=False).option:
-            scales_df['abs_' + option] = pandas.Series(abs(scales_df[option]), scales_df.index)
-            sort_cols.append('abs_' + option)
         scales_df.sort_values(by=sort_cols, ascending=False, inplace=True)
         scales_df = scales_df.drop(sort_cols, 1).fillna(0)
     if cumsum:
