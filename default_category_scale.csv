@@ -1,27 +1,27 @@
 Authoritarianism,0
 Average Disposable Income,0
 Average Income,0
-Average Income of Poor,0
+Average Income of Poor,.96
 Average Income of Rich,0
 Averageness,0
 Black Market,0
 Business Subsidization,0
 Charmlessness,0
-Cheerfulness,0
-Civil Rights,0
-Compassion,0
+Cheerfulness,1
+Civil Rights,.98
+Compassion,1
 Compliance,0
-Corruption,0
+Corruption,-.99
 Crime,0
-Culture,1
+Culture,0
 Death Rate,0
 Defense Forces,0
 Eco-Friendliness,0
 Economic Freedom,0
 Economic Output,0
-Economy,0
+Economy,1
 Employment,0
-Environmental Beauty,0
+Environmental Beauty,1
 Foreign Aid,0
 Freedom From Taxation,0
 Government Size,0
@@ -46,7 +46,7 @@ Industry: Pizza Delivery,0
 Industry: Retail,0
 Industry: Timber Woodchipping,0
 Industry: Trout Fishing,0
-Integrity,0
+Integrity,.99
 Intelligence,0
 Law Enforcement,0
 Lifespan,0
@@ -55,7 +55,7 @@ Nudity,0
 Obesity,0
 Pacifism,0
 Political Apathy,0
-Political Freedom,0
+Political Freedom,.97
 Population,0
 Primitiveness,0
 Public Education,0
@@ -74,6 +74,6 @@ Taxation,0
 Tourism,0
 Wealth Gaps,0
 Weaponization,0
-Weather,1
+Weather,0
 Welfare,0
 Youth Rebelliousness,0
