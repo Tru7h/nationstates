@@ -95,6 +95,12 @@ def summarize_results(scales_df, options, census_filter, cumsum):
         scales_df = scales_df[scales_df.bias != 0] if census_filter else scales_df
         logger.info(scales_df.to_string())
         logger.info(options.to_string(index=False))
+    exponents = [7.0**net for net in options.net_result]
+    probability = [exp/sum(exponents) for exp in exponents]
+    out_of_0xff = ''
+    for opt, prob in zip(options.option, probability):
+        out_of_0xff += '\n{}: {:08b}'.format(opt, round(prob*0xff))
+    logger.info('Options and probabilities %s', out_of_0xff)
 
 def build_dataframes(nation, doc, excluded):
     scales_file = pathlib.Path(nation + '_category_scale.csv')
@@ -114,6 +120,8 @@ def build_dataframes(nation, doc, excluded):
     logger.info(title.text)
     cols = 'option,datums,net_result,headline'.split(',')
     options = pandas.DataFrame(columns=cols)
+    option_summary = dict(option='0.', datums=None, net_result=0, headline='Dismiss issue.')
+    options = options.append(option_summary, ignore_index=True)
     for result, effects, observations in doc.xpath('//tr')[1:]:
         datums = observations.text_content().strip().splitlines() or '0'
         datums, *extras = set(cnt for cnt in datums if '-' not in cnt)
