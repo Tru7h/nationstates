@@ -9,6 +9,7 @@ import requests
 import lxml.html
 import pandas
 
+EXPONENT_BASE = 7.3 # float greater than one
 REQUEST_HEADERS = {'content-type': 'text/html'}
 ptrn_grps = dict(num=r'([-+]?\d+(?:\.\d+)?)', census=r'([^\.\d]+)')
 effect_pattern = re.compile('^{num} to {num} {census} \(mean {num}\)$'.format(**ptrn_grps))
@@ -85,7 +86,7 @@ def summarize_results(scales_df, options, census_filter, cumsum):
         scales_df['magnitude'] = pandas.Series(abs(scales_df.bias), scales_df.index)
         scales_df['direction'] = pandas.Series(scales_df.bias > 0, scales_df.index)
         sort_cols = ['magnitude', 'direction']
-        scales_df.sort_values(by=sort_cols, ascending=False, inplace=True)
+        scales_df.sort_values(by=sort_cols, ascending=not cumsum, inplace=True)
         scales_df = scales_df.drop(sort_cols, 1).fillna(0)
     if cumsum:
         bias_col, *option_cols = scales_df.columns
@@ -95,12 +96,7 @@ def summarize_results(scales_df, options, census_filter, cumsum):
         scales_df = scales_df[scales_df.bias != 0] if census_filter else scales_df
         logger.info(scales_df.to_string())
         logger.info(options.to_string(index=False))
-    exponents = [7.0**net for net in options.net_result]
-    probability = [exp/sum(exponents) for exp in exponents]
-    out_of_0xff = ''
-    for opt, prob in zip(options.option, probability):
-        out_of_0xff += '\n{}: {:08b}'.format(opt, round(prob*0xff))
-    logger.info('Options and probabilities %s', out_of_0xff)
+    return
 
 def build_dataframes(nation, doc, excluded):
     scales_file = pathlib.Path(nation + '_category_scale.csv')
@@ -142,6 +138,11 @@ def build_dataframes(nation, doc, excluded):
             option_summary = dict(option=option_text, datums=datums, net_result=weight, headline=headline, **extras)
             options = options.append(option_summary, ignore_index=True)
             option_text = ''
+    exponents = [EXPONENT_BASE**net for net in options.net_result]
+    probability = [exp/sum(exponents) for exp in exponents]
+    out_of_0xff = [round(prob*0xff) for prob in probability]
+    options['OutOf255'] = pandas.Series(out_of_0xff, index=options.index)
+    cols.insert(3, 'OutOf255')
     return scales_df, options[cols]
 
 def weigh_option(effects):
