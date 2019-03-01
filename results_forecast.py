@@ -92,6 +92,15 @@ def summarize_results(scales_df, options, census_filter, cumsum):
         bias_col, *option_cols = scales_df.columns
         for option in option_cols:
             scales_df[option] = (scales_df[bias_col] * scales_df[option]).cumsum()
+        scales_df_T = scales_df.T
+        for index in scales_df_T:
+            bias, *option_nets = scales_df_T[index]
+            prob_list = [bias] + probability_list(option_nets)
+            new_row = pandas.Series(prob_list, index=scales_df_T.index)
+            scales_df_T[index] = new_row
+        scales_df = scales_df_T.T
+        for option in option_cols:
+            scales_df[option] = scales_df[option].astype(int)
     with pandas.option_context('display.max_colwidth', -1):
         scales_df = scales_df[scales_df.bias != 0] if census_filter else scales_df
         logger.info(scales_df.to_string())
@@ -138,12 +147,15 @@ def build_dataframes(nation, doc, excluded):
             option_summary = dict(option=option_text, datums=datums, net_result=weight, headline=headline, **extras)
             options = options.append(option_summary, ignore_index=True)
             option_text = ''
-    exponents = [EXPONENT_BASE**net for net in options.net_result]
-    probability = [exp/sum(exponents) for exp in exponents]
-    out_of_0xff = [round(prob*0xff) for prob in probability]
-    options['OutOf255'] = pandas.Series(out_of_0xff, index=options.index)
-    cols.insert(3, 'OutOf255')
+    out_of_0x3f = probability_list(options.net_result)
+    options['OutOf63'] = pandas.Series(out_of_0x3f, index=options.index)
+    cols.insert(3, 'OutOf63')
     return scales_df, options[cols]
+
+def probability_list(pd_series):
+    exponents = [EXPONENT_BASE**net for net in pd_series]
+    probability = [exp/sum(exponents) for exp in exponents]
+    return [round(prob*0x3f) for prob in probability]
 
 def weigh_option(effects):
     results = {}
