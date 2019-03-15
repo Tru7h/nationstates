@@ -141,7 +141,7 @@ def build_dataframes(nation, doc, excluded):
         weight = sum(category_scales[category] * deltas[category] for category in deltas)
         scales_df[option_text] = [deltas.get(category) for category in scales_df.index]
         if any(reform in unparsed_strs for reform in excluded_policy_reforms):
-            option = ''
+            option_text += ' policy reform'
         extras = split_unparsed_strings(unparsed_strs)
         cols.extend(key for key in extras if key not in cols)
         headlines = headline.replace('@@NAME@@', nation.title()).split('\n')
