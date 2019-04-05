@@ -9,7 +9,7 @@ import requests
 import lxml.html
 import pandas
 
-EXPONENT_BASE = 7.3 # float greater than one
+EXPONENT_BASE = 11.3 # float greater than one
 REQUEST_HEADERS = {'content-type': 'text/html'}
 ptrn_grps = dict(num=r'([-+]?\d+(?:\.\d+)?)', census=r'([^\.\d]+)')
 effect_pattern = re.compile('^{num} to {num} {census} \(mean {num}\)$'.format(**ptrn_grps))
@@ -181,9 +181,9 @@ def parse_regular_pattern(regular):
     high = float(regular.group(2))
     census = regular.group(3)
     mean = float(regular.group(4))
-    numer = high + mean + low
+    numer = min(high, 0) + mean + max(low, 0)
     denom = max(high, 0) - min(low, 0)
-    delta = numer / denom / 2
+    delta = numer / denom
     return census, delta
 
 def split_unparsed_strings(unparsed_strs):
