@@ -62,14 +62,14 @@ Public Education,0
 Public Healthcare,0
 Public Transport,0
 Recreational Drug Use,0
-Religiousness,0
+Religiousness,.95
 Rudeness,0
 Safety,0
 Scientific Advancement,0
 Sector: Agriculture,0
 Sector: Manufacturing,0
-Secularism,0
-Social Conservatism,0
+Secularism,-.95
+Social Conservatism,-.98
 Taxation,0
 Tourism,0
 Wealth Gaps,0
