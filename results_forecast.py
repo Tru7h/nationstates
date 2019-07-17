@@ -148,6 +148,7 @@ def build_dataframes(nation, doc, excluded):
         for headline in headlines:
             option_summary = dict(option=option_text, datums=datums, net_result=weight, headline=headline, **extras)
             options = options.append(option_summary, ignore_index=True)
+            weight = -float('inf')
             option_text = ''
     out_of_99 = probability_list(options.net_result)
     options['OutOf99'] = pandas.Series(out_of_99, index=options.index)
