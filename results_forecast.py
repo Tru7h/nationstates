@@ -131,7 +131,7 @@ def build_dataframes(nation, doc, excluded):
     options = options.append(option_summary, ignore_index=True)
     for result, effects, observations in doc.xpath('//tr')[1:]:
         datums = observations.text_content().strip().splitlines() or '0'
-        datums, *extras = set(cnt for cnt in datums if '-' not in cnt)
+        unused_zero, datums, *extras = sorted(set(cnt for cnt in datums if '-' not in cnt))
         assert not extras, observations.text_content()
         datums = int(datums)
         option_text, headline = result.text_content()[1:].split(' ', 1)
@@ -165,6 +165,8 @@ def weigh_option(effects):
     unparsed_strs = []
     for effect in effects:
         effect_str = effect.text_content()
+        if effect_str.startswith('unknown effect'):
+            continue
         regular = effect_pattern.search(effect_str)
         simple = simple_pattern.search(effect_str)
         if regular:
