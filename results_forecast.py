@@ -163,15 +163,16 @@ def weigh_option(effects, observations):
     unparsed_strs = []
     for effect_cell, count_cell in zip(effects, observations):
         effect_str = effect_cell.text_content()
-        count = int(count_cell.text_content())
         if effect_str.startswith('unknown effect'):
             continue
         regular = effect_pattern.search(effect_str)
         simple = simple_pattern.search(effect_str)
         if regular:
+            count = int(count_cell.text_content())
             category, delta = parse_regular_pattern(regular)
             results[category] = delta * count / counts
         elif simple:
+            count = int(count_cell.text_content())
             mean_str, category = simple.groups()
             mean = float(mean_str) * count / counts
             results[category] = (mean > 0) - (mean < 0)
