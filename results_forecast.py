@@ -130,14 +130,10 @@ def build_dataframes(nation, doc, excluded):
     option_summary = dict(option='0.', datums=None, net_result=0, headline='Dismiss issue.')
     options = options.append(option_summary, ignore_index=True)
     for result, effects, observations in doc.xpath('//tr')[1:]:
-        datums = observations.text_content().strip().splitlines() or '0'
-        unused_zero, datums, *extras = sorted(set(cnt for cnt in datums if '-' not in cnt))
-        assert not extras, observations.text_content()
-        datums = int(datums)
         option_text, headline = result.text_content()[1:].split(' ', 1)
-        if datums < 1 or any(digit in option_text for digit in excluded):
+        if any(digit in option_text for digit in excluded):
             continue
-        deltas, unparsed_strs = weigh_option(effects)
+        deltas, unparsed_strs, datums = weigh_option(effects, observations)
         weight = sum(category_scales[category] * deltas[category] for category in deltas)
         scales_df[option_text] = [deltas.get(category) for category in scales_df.index]
         if any(reform in unparsed_strs for reform in excluded_policy_reforms):
@@ -160,24 +156,28 @@ def probability_list(pd_series):
     probability = [exp/sum(exponents) for exp in exponents]
     return [round(prob*99) for prob in probability]
 
-def weigh_option(effects):
+def weigh_option(effects, observations):
+    counts = observations.text_content().strip().splitlines() or '0'
+    counts = max(set(int(cnt) for cnt in counts if '-' not in cnt))
     results = {}
     unparsed_strs = []
-    for effect in effects:
-        effect_str = effect.text_content()
+    for effect_cell, count_cell in zip(effects, observations):
+        effect_str = effect_cell.text_content()
+        count = int(count_cell.text_content())
         if effect_str.startswith('unknown effect'):
             continue
         regular = effect_pattern.search(effect_str)
         simple = simple_pattern.search(effect_str)
         if regular:
             category, delta = parse_regular_pattern(regular)
-            results[category] = delta
+            results[category] = delta * count / counts
         elif simple:
-            mean, category = simple.groups()
-            results[category] = (float(mean) > 0) - (float(mean) < 0)
+            mean_str, category = simple.groups()
+            mean = float(mean_str) * count / counts
+            results[category] = (mean > 0) - (mean < 0)
         else:
             unparsed_strs.append(effect_str)
-    return results, unparsed_strs
+    return results, unparsed_strs, counts
 
 def parse_regular_pattern(regular):
     low = float(regular.group(1))
