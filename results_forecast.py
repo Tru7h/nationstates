@@ -158,7 +158,7 @@ def probability_list(pd_series):
 
 def weigh_option(effects, observations):
     counts = observations.text_content().strip().splitlines() or '0'
-    counts = max(set(int(cnt) for cnt in counts if '-' not in cnt))
+    max_count = max(int(cnt) for cnt in counts if '-' not in cnt)
     results = {}
     unparsed_strs = []
     for effect_cell, count_cell in zip(effects, observations):
@@ -170,15 +170,15 @@ def weigh_option(effects, observations):
         if regular:
             count = int(count_cell.text_content())
             category, delta = parse_regular_pattern(regular)
-            results[category] = delta * count / counts
+            results[category] = delta * count / max_count
         elif simple:
             count = int(count_cell.text_content())
-            mean_str, category = simple.groups()
-            mean = float(mean_str) * count / counts
-            results[category] = (mean > 0) - (mean < 0)
+            delta_str, category = simple.groups()
+            delta = float(delta_str) if count > 1 else 0
+            results[category] = (delta > 0) - (delta < 0)
         else:
             unparsed_strs.append(effect_str)
-    return results, unparsed_strs, counts
+    return results, unparsed_strs, max_count
 
 def parse_regular_pattern(regular):
     low = float(regular.group(1))
