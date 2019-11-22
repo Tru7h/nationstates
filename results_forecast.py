@@ -75,7 +75,7 @@ def get_issue(match):
         regex = re.findall('#(\d+) [^\?]', doc.text_content())
         issue = random.choice(regex)
 
-    page = requests.get(url + '{issue}.html'.format(issue=issue), headers=REQUEST_HEADERS)
+    page = requests.get(url + f'{issue}.html', headers=REQUEST_HEADERS)
     doc = lxml.html.fromstring(page.content)
     return issue, doc
 
