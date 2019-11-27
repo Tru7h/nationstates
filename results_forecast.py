@@ -125,7 +125,7 @@ def build_dataframes(nation, doc, excluded):
     title, *extras = doc.xpath('//title')
     assert not extras
     logger.info(title.text)
-    cols = 'option,datums,net_result,headline'.split(',')
+    cols = 'option,datums,net_result,percent,headline'.split(',')
     options = pandas.DataFrame(columns=cols)
     option_summary = dict(option='0.', datums=None, net_result=0, headline='Dismiss issue.')
     options = options.append(option_summary, ignore_index=True)
@@ -146,9 +146,7 @@ def build_dataframes(nation, doc, excluded):
             options = options.append(option_summary, ignore_index=True)
             weight = -float('inf')
             option_text = ''
-    out_of_99 = probability_list(options.net_result)
-    options['OutOf99'] = pandas.Series(out_of_99, index=options.index)
-    cols.insert(3, 'OutOf99')
+    options['percent'] = pandas.Series(probability_list(options.net_result), index=options.index)
     return scales_df, options[cols]
 
 def probability_list(pd_series):
