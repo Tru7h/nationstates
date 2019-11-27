@@ -178,8 +178,8 @@ def weigh_option(effect_col, count_col):
         else:
             unparsed_strs.append(effect_str)
     has_counts = any(cnt.isdecimal() for cnt in counts)
-    max_count = max(int(cnt) for cnt in counts if cnt.isdecimal()) if has_counts else 0
-    return results, unparsed_strs, max_count
+    min_count = min(int(cnt) for cnt in counts if cnt.isdecimal()) if has_counts else 0
+    return results, unparsed_strs, min_count
 
 def parse_regular_pattern(regular):
     low = float(regular.group(1))
