@@ -156,17 +156,14 @@ def probability_list(pd_series):
     probability = [exp/sum(exponents) for exp in exponents]
     return [round(prob*99) for prob in probability]
 
-def weigh_option(effects, observations):
-    counts = observations.text_content().strip().splitlines() or ['0']
-    max_count = max(int(cnt) for cnt in counts if cnt.isdecimal())
+def weigh_option(effect_col, count_col):
+    effects = effect_col.text_content().strip().splitlines()
+    counts = count_col.text_content().strip().splitlines()
+    counts += [''] * (len(effects) - len(counts))
     results = {}
     unparsed_strs = []
-    for effect_cell, count_cell in zip(effects, observations):
-        effect_str = effect_cell.text_content()
-        if effect_str.startswith('unknown effect'):
-            continue
-        count_str = count_cell.text_content()
-        if count_str == '1':
+    for effect_str, count_str in zip(effects, counts):
+        if effect_str.startswith('unknown effect') or count_str == '1':
             continue
         count = int(count_str) if count_str.isdecimal() else 0
         regular = effect_pattern.search(effect_str)
@@ -180,6 +177,8 @@ def weigh_option(effects, observations):
             results[category] = (delta > 0) - (delta < 0)
         else:
             unparsed_strs.append(effect_str)
+    has_counts = any(cnt.isdecimal() for cnt in counts)
+    max_count = max(int(cnt) for cnt in counts if cnt.isdecimal()) if has_counts else 0
     return results, unparsed_strs, max_count
 
 def parse_regular_pattern(regular):
