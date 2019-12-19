@@ -131,14 +131,16 @@ def build_dataframes(nation, doc, excluded):
     options = options.append(option_summary, ignore_index=True)
     for result, effects, observations in doc.xpath('//tr')[1:]:
         option_text, headline = result.text_content()[1:].split(' ', 1)
-        if any(digit in option_text for digit in excluded):
-            continue
         deltas, unparsed_strs, datums = weigh_option(effects, observations)
-        weight = sum(category_scales[category] * deltas[category] for category in deltas)
-        scales_df[option_text] = [deltas.get(category) for category in scales_df.index]
+        if any(option_text.startswith(option_str) for option_str in excluded):
+            weight = -float('inf')
+            extras = {}
+        else:
+            scales_df[option_text] = [deltas.get(category) for category in scales_df.index]
+            weight = sum(category_scales[category] * deltas[category] for category in deltas)
+            extras = split_unparsed_strings(unparsed_strs)
         if any(reform in unparsed_strs for reform in excluded_policy_reforms):
             option_text += ' policy reform'
-        extras = split_unparsed_strings(unparsed_strs)
         cols.extend(key for key in extras if key not in cols)
         headlines = headline.replace('@@NAME@@', nation.title()).split('\n')
         for headline in headlines:
