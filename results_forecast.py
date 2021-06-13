@@ -126,9 +126,8 @@ def build_dataframes(nation, doc, excluded):
     assert not extras
     logger.info(title.text)
     cols = 'option,datums,net_result,percent,headline'.split(',')
-    options = pandas.DataFrame(columns=cols)
     option_summary = dict(option='0.', datums=None, net_result=0, headline='Dismiss issue.')
-    options = options.append(option_summary, ignore_index=True)
+    options = [option_summary]
     for result, effects, observations in doc.xpath('//tr')[1:]:
         option_text, headline = result.text_content()[1:].split(' ', 1)
         deltas, unparsed_strs, datums = weigh_option(effects, observations)
@@ -145,10 +144,12 @@ def build_dataframes(nation, doc, excluded):
         headlines = headline.replace('@@NAME@@', nation.title()).split('\n')
         for headline in headlines:
             option_summary = dict(option=option_text, datums=datums, net_result=weight, headline=headline, **extras)
-            options = options.append(option_summary, ignore_index=True)
+            options.append(option_summary)
             weight = -float('inf')
             option_text = ''
-    options['percent'] = pandas.Series(probability_list(options.net_result), index=options.index)
+    options = pandas.DataFrame.from_records(options)
+    percent = probability_list(options.net_result)
+    options['percent'] = pandas.Series(percent, index=options.index)
     return scales_df, options[cols]
 
 def probability_list(pd_series):
