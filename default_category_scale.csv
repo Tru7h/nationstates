@@ -1,8 +1,8 @@
 Authoritarianism,0
 Average Disposable Income,0
-Average Income,0
 Average Income of Poor,.96
 Average Income of Rich,0
+Average Income,0
 Averageness,0
 Black Market,0
 Business Subsidization,0
@@ -22,6 +22,7 @@ Economic Output,0
 Economy,1
 Employment,0
 Environmental Beauty,1
+Food Quality,0
 Foreign Aid,0
 Freedom From Taxation,0
 Government Size,0
@@ -54,6 +55,7 @@ Niceness,0
 Nudity,0
 Obesity,0
 Pacifism,0
+Patriotism,0
 Political Apathy,0
 Political Freedom,.97
 Population,0
@@ -68,8 +70,8 @@ Safety,0
 Scientific Advancement,0
 Sector: Agriculture,0
 Sector: Manufacturing,0
-Secularism,-.95
-Social Conservatism,-.98
+Secularism,.95
+Social Conservatism,0
 Taxation,0
 Tourism,0
 Wealth Gaps,0
