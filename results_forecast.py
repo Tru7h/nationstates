@@ -198,12 +198,17 @@ def split_unparsed_strings(unparsed_strs):
     for extra in unparsed_strs:
         if ' policy: ' in extra:
             behavior, policy = extra.split(' policy: ', 1)
+        elif ' notability: ' in extra:
+            behavior, policy = extra.split(' notability: ', 1)
         elif extra.endswith(' the World Assembly'):
             behavior, policy = extra.rsplit(' the ', 1)
         elif extra.startswith('leads to '):
             policy, behavior = extra.rsplit(' ', 1)
-        else:
+        elif ' ' in extra:
             behavior, policy = extra.rsplit(' ', 1)
+        elif extra:
+            behavior = ''
+            policy = extra
         extras[policy] = behavior
     return extras
 
