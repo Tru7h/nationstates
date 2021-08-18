@@ -189,7 +189,7 @@ def parse_regular_pattern(regular):
     mean = float(regular.group(4))
     numer = min(high, 0) + mean + max(low, 0)
     denom = max(high, 0) - min(low, 0)
-    delta = numer / denom
+    delta = numer / 2 / denom
     return census, delta
 
 def split_unparsed_strings(unparsed_strs):
