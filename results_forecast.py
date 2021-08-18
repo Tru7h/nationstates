@@ -35,7 +35,7 @@ def get_options(nation: str=None, issue: str=None):
     while True:
         match = re.search('n (\d{1,4}|\?)', option)
         if match:
-            issue, doc = get_issue(match)
+            issue_num, doc = get_issue(match)
             census_filter = True
             excluded = set()
             cumsum = False
@@ -53,7 +53,7 @@ def get_options(nation: str=None, issue: str=None):
             excluded.add(option)
         scales_df, options = build_dataframes(nation, doc, excluded)
         summarize_results(scales_df, options, census_filter, cumsum)
-        logger.info('https://nsindex.net/wiki/NationStates_Issue_No._{issue}\n'.format(issue=issue))
+        logger.info('https://nsindex.net/wiki/NationStates_Issue_No._%d\n', issue_num)
         option = None
         while not option:
             option = input(
@@ -77,7 +77,7 @@ def get_issue(match):
 
     page = requests.get(url + f'{issue}.html', headers=REQUEST_HEADERS)
     doc = lxml.html.fromstring(page.content)
-    return issue, doc
+    return int(issue), doc
 
 def summarize_results(scales_df, options, census_filter, cumsum):
     scales_df.dropna(thresh=2, inplace=True)
