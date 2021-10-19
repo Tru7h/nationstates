@@ -1,10 +1,17 @@
 ''' attempt to forecast best option from probable effects '''
+# Standard
+import collections
 import logging
+import math
 import pathlib
 import random
 import sys
 import re
 
+# Typing
+from typing import Dict, List, Tuple
+
+# External
 import requests
 import lxml.html
 import pandas
@@ -14,16 +21,14 @@ REQUEST_HEADERS = {'content-type': 'text/html'}
 ptrn_grps = dict(num=r'([-+]?\d+(?:\.\d+)?)', census=r'([^\.\d]+)')
 effect_pattern = re.compile('^{num} to {num} {census} \(mean {num}\)$'.format(**ptrn_grps))
 simple_pattern = re.compile('^{num} {census}$'.format(**ptrn_grps))
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.NullHandler())
 
-def get_options(nation: str=None, issue: str=None):
+def main(nation: str=None, issue: str=None):
     while nation is None or not nation.isalnum():
         nation = input('nation: ')
         scales_file = pathlib.Path(nation + '_category_scale.csv')
         if scales_file.is_file():
             break
-        logger.error('Category csv for nationstate: "%s" not found.', nation)
+        print(f'Category csv for nationstate: "{nation}" not found.')
         nation = None
     while issue is None or not issue.isdecimal():
         issue = input('issue: ')
@@ -53,7 +58,7 @@ def get_options(nation: str=None, issue: str=None):
             excluded.add(option)
         scales_df, options = build_dataframes(nation, doc, excluded)
         summarize_results(scales_df, options, census_filter, cumsum)
-        logger.info('https://nsindex.net/wiki/NationStates_Issue_No._%d\n', issue_num)
+        print(f'https://nsindex.net/wiki/NationStates_Issue_No._{issue_num}\n')
         option = None
         while not option:
             option = input(
@@ -79,7 +84,7 @@ def get_issue(match):
     doc = lxml.html.fromstring(page.content)
     return int(issue), doc
 
-def summarize_results(scales_df, options, census_filter, cumsum):
+def summarize_results(scales_df: pandas.DataFrame, options: pandas.DataFrame, census_filter, cumsum):
     scales_df.dropna(thresh=2, inplace=True)
     scales_df.sort_index(inplace=True)
     if not options.empty:
@@ -105,8 +110,8 @@ def summarize_results(scales_df, options, census_filter, cumsum):
             scales_df[option] = scales_df[option].astype(int)
     with pandas.option_context('display.max_colwidth', -1):
         scales_df = scales_df[scales_df.bias != 0] if census_filter else scales_df
-        logger.info(scales_df.to_string())
-        logger.info(options.to_string(index=False))
+        print(scales_df.to_string() + '\n')
+        print(options.fillna('').to_string(index=False) + '\n')
     return
 
 def build_dataframes(nation, doc, excluded):
@@ -124,12 +129,14 @@ def build_dataframes(nation, doc, excluded):
 
     title, *extras = doc.xpath('//title')
     assert not extras
-    logger.info(title.text)
-    cols = 'option,datums,net_result,percent,headline'.split(',')
+    print(title.text)
+    cols: List[str] = (
+        'option,datums,net_result,percent,headline,resigns from,leads to,'
+        'adds,removes,sometimes adds,sometimes removes,may add or remove').split(',')
     option_summary = dict(option='0.', datums=None, net_result=0, headline='Dismiss issue.')
-    options = [option_summary]
+    option_list = [option_summary]
     for result, effects, observations in doc.xpath('//tr')[1:]:
-        option_text, headline = result.text_content()[1:].split(' ', 1)
+        option_text, headline = result.text_content().strip().split(' ', 1)
         deltas, unparsed_strs, datums = weigh_option(effects, observations)
         if any(option_text.startswith(option_str) for option_str in excluded):
             weight = -float('inf')
@@ -140,22 +147,43 @@ def build_dataframes(nation, doc, excluded):
             extras = split_unparsed_strings(unparsed_strs)
             if any(reform in unparsed_strs for reform in excluded_policy_reforms):
                 option_text += ' policy reform'
-        cols.extend(key for key in extras if key not in cols)
-        headlines = headline.replace('@@NAME@@', nation.title()).split('\n')
-        for headline in headlines:
-            option_summary = dict(option=option_text, datums=datums, net_result=weight, headline=headline, **extras)
-            options.append(option_summary)
-            weight = -float('inf')
-            option_text = ''
-    options = pandas.DataFrame.from_records(options)
-    percent = probability_list(options.net_result)
-    options['percent'] = pandas.Series(percent, index=options.index)
-    return scales_df, options[cols]
+        if extras:
+            first_row = extras.pop(0)
+            cols.extend(key for key in first_row if key not in cols)
+        else:
+            first_row = {}
+        headline, *unused_extra = headline.replace('@@NAME@@', nation.title()).split('\n')
+        option_summary = dict(option=option_text, datums=datums, net_result=weight, headline=headline, **first_row)
+        option_list.append(option_summary)
+        for row in extras:
+            cols.extend(key for key in row if key not in cols)
+            option_list.append(row)
+    options = pandas.DataFrame.from_records(option_list)
+    options['percent'] = probability_list(options['net_result'])
+    options = options.reindex([col for col in cols if col in options.columns], axis=1)
+    return scales_df, options
 
-def probability_list(pd_series):
-    exponents = [EXPONENT_BASE**net for net in pd_series]
-    probability = [exp/sum(exponents) for exp in exponents]
-    return [round(prob*99) for prob in probability]
+def probability_list(pd_series: pandas.Series) -> pandas.Series:
+    exponents: pandas.Series[float] = EXPONENT_BASE**pd_series
+    exp_sum = sum(exp for exp in exponents if not math.isnan(exp))
+    probability: pandas.Series[float] = exponents * 100 / exp_sum
+    sort_func = lambda prob: abs(round(prob) - prob)
+    probability.sort_values(key=sort_func)
+    rounded_list: List[int] = []
+    remainder = 100
+    for prob in probability:
+        if math.isnan(prob):
+            rounded_list.append(prob)
+            continue
+        rounded_prob: int = round(prob)
+        if rounded_prob < remainder:
+            rounded_list.append(rounded_prob)
+            remainder -= rounded_prob
+        else:
+            rounded_list.append(remainder)
+            remainder = 0
+    rounded = pandas.Series(rounded_list, index=probability.index).sort_index()
+    return rounded
 
 def weigh_option(effect_col, count_col):
     effects = effect_col.text_content().strip().splitlines()
@@ -182,19 +210,18 @@ def weigh_option(effect_col, count_col):
             unparsed_strs.append(effect_str)
     return results, unparsed_strs, min_count
 
-def parse_regular_pattern(regular):
+def parse_regular_pattern(regular: re.Match) -> Tuple[str, float]:
     low = float(regular.group(1))
     high = float(regular.group(2))
-    census = regular.group(3)
+    census: str = regular.group(3)
     mean = float(regular.group(4))
     numer = min(high, 0) + mean + max(low, 0)
     denom = max(high, 0) - min(low, 0)
     delta = numer / 2 / denom
     return census, delta
 
-def split_unparsed_strings(unparsed_strs):
-    extras = {}
-    extra: str
+def split_unparsed_strings(unparsed_strs: List[str]) -> List[Dict[str, str]]:
+    records: List[Dict[str, str]] = []
     for extra in unparsed_strs:
         if ' policy: ' in extra:
             behavior, policy = extra.split(' policy: ', 1)
@@ -203,23 +230,20 @@ def split_unparsed_strings(unparsed_strs):
         elif extra.endswith(' the World Assembly'):
             behavior, policy = extra.rsplit(' the ', 1)
         elif extra.startswith('leads to '):
-            policy, behavior = extra.rsplit(' ', 1)
+            behavior, policy = extra.rsplit(' ', 1)
         elif ' ' in extra:
             behavior, policy = extra.rsplit(' ', 1)
         elif extra:
             behavior = ''
             policy = extra
-        extras[policy] = behavior
-    return extras
-
-def main(level=logging.INFO):
-    c_handler = logging.StreamHandler()
-    c_handler.setLevel(level)
-    c_format = logging.Formatter('\n%(message)s')
-    c_handler.setFormatter(c_format)
-    logger.addHandler(c_handler)
-    logger.setLevel(level)
-    get_options(*sys.argv[1:])
+        for row in records:
+            if behavior not in row:
+                row[behavior] = policy
+                break
+        else:
+            row = {behavior: policy}
+            records.append(row)
+    return records
 
 if __name__ == '__main__':
-    main()
+    main(*sys.argv[1:])
