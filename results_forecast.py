@@ -16,6 +16,7 @@ import requests
 import lxml.html
 import pandas
 
+INFINITE = float('inf')
 EXPONENT_BASE = 11.3 # float greater than one
 REQUEST_HEADERS = {'content-type': 'text/html'}
 ptrn_grps = dict(num=r'([-+]?\d+(?:\.\d+)?)', census=r'([^\.\d]+)')
@@ -58,7 +59,8 @@ def main(nation: str=None, issue: str=None):
             excluded.add(option)
         scales_df, options = build_dataframes(nation, doc, excluded)
         summarize_results(scales_df, options, census_filter, cumsum)
-        print(f'https://nsindex.net/wiki/NationStates_Issue_No._{issue_num}\n')
+        print('https://nsindex.net/wiki/NationStates_Issue_No._%d\n' % issue_num)
+        print('https://www.nationstates.net/page=show_dilemma/dilemma=%d\n' % issue_num)
         option = None
         while not option:
             option = input(
@@ -99,15 +101,16 @@ def summarize_results(scales_df: pandas.DataFrame, options: pandas.DataFrame, ce
             scales_df[option] = (scales_df[bias_col] * scales_df[option]).cumsum()
         scales_df['0.'] = scales_df[bias_col] * 0
         option_cols.insert(0, '0.')
-        scales_df_T = scales_df.T
-        for index in scales_df_T:
-            bias, *option_nets = scales_df_T[index]
-            prob_list = [bias] + probability_list(option_nets)
-            new_row = pandas.Series(prob_list, index=scales_df_T.index)
-            scales_df_T[index] = new_row
-        scales_df = scales_df_T.T[[bias_col] + option_cols]
-        for option in option_cols:
-            scales_df[option] = scales_df[option].astype(int)
+        scales_T = scales_df.T
+        for census in scales_T.columns:
+            weight_series = scales_T.pop(census).copy()
+            bias = weight_series['bias']
+            weight_series['bias'] = -INFINITE
+            new_row = probability_list(weight_series).astype(float)
+            new_row['bias'] = bias
+            scales_T[census] = new_row
+        scales_TT = scales_T.T
+        scales_df = pandas.merge(scales_TT[bias_col].astype(float), scales_TT[option_cols].astype(int), left_index=True, right_index=True)
     with pandas.option_context('display.max_colwidth', -1):
         scales_df = scales_df[scales_df.bias != 0] if census_filter else scales_df
         print(scales_df.to_string() + '\n')
@@ -139,7 +142,7 @@ def build_dataframes(nation, doc, excluded):
         option_text, headline = result.text_content().strip().split(' ', 1)
         deltas, unparsed_strs, datums = weigh_option(effects, observations)
         if any(option_text.startswith(option_str) for option_str in excluded):
-            weight = -float('inf')
+            weight = -INFINITE
             extras = {}
         else:
             scales_df[option_text] = [deltas.get(category) for category in scales_df.index]
