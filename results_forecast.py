@@ -1,7 +1,5 @@
 ''' attempt to forecast best option from probable effects '''
 # Standard
-import collections
-import logging
 import math
 import pathlib
 import random
@@ -9,7 +7,7 @@ import sys
 import re
 
 # Typing
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 # External
 import requests
@@ -38,15 +36,16 @@ def main(nation: str=None, issue: str=None):
         break
     option = 'n ' + issue
 
+    doc: Optional[lxml.html.HtmlElement] = None
+    excluded: Set[str] = set()
+    census_filter = True
+    cumsum = False
     while True:
-        match = re.search('n (\d{1,4}|\?)', option)
+        match = re.search(r'n (?P<issue>\d{1,4}|\?)', option)
         if match:
-            issue_num, doc = get_issue(match)
-            census_filter = True
-            excluded = set()
-            cumsum = False
+            issue_num, doc = get_issue(match['issue'])
         elif option == '0':
-            excluded = set()
+            excluded.clear()
         elif option == 'f':
             census_filter = not census_filter
         elif option == 'c':
@@ -57,6 +56,7 @@ def main(nation: str=None, issue: str=None):
             excluded.remove(option)
         else:
             excluded.add(option)
+        assert doc is not None
         scales_df, options = build_dataframes(nation, doc, excluded)
         summarize_results(scales_df, options, census_filter, cumsum)
         print('https://nsindex.net/wiki/NationStates_Issue_No._%d\n' % issue_num)
@@ -72,21 +72,20 @@ def main(nation: str=None, issue: str=None):
                 '"e" > exit\n'
                 '>> ')
 
-def get_issue(match):
+def get_issue(issue: str):
     url = 'http://www.mwq.dds.nl/ns/results/'
-    issue, *extras = match.groups()
-    assert not extras
     if issue == '?':
         page = requests.get(url, headers=REQUEST_HEADERS)
-        doc = lxml.html.fromstring(page.content)
-        regex = re.findall('#(\d+) [^\?]', doc.text_content())
+        doc: lxml.html.HtmlElement = lxml.html.fromstring(page.content)
+        text_content: str = doc.text_content()
+        regex = re.findall('#(\d+) [^\?]', text_content)
         issue = random.choice(regex)
 
-    page = requests.get(url + f'{issue}.html', headers=REQUEST_HEADERS)
-    doc = lxml.html.fromstring(page.content)
+    page = requests.get(f'{url}{issue}.html', headers=REQUEST_HEADERS)
+    doc: lxml.html.HtmlElement = lxml.html.fromstring(page.content)
     return int(issue), doc
 
-def summarize_results(scales_df: pandas.DataFrame, options: pandas.DataFrame, census_filter, cumsum):
+def summarize_results(scales_df: pandas.DataFrame, options: pandas.DataFrame, census_filter: bool, cumsum: bool):
     scales_df.dropna(thresh=2, inplace=True)
     scales_df.sort_index(inplace=True)
     if not options.empty:
@@ -111,17 +110,18 @@ def summarize_results(scales_df: pandas.DataFrame, options: pandas.DataFrame, ce
             scales_T[census] = new_row
         scales_TT = scales_T.T
         scales_df = pandas.merge(scales_TT[bias_col].astype(float), scales_TT[option_cols].astype(int), left_index=True, right_index=True)
-    with pandas.option_context('display.max_colwidth', -1):
-        scales_df = scales_df[scales_df.bias != 0] if census_filter else scales_df
+    with pandas.option_context('display.max_colwidth', -1, 'display.float_format', '{:.4f}'.format, 'display.precision', 4):
+        if census_filter:
+            scales_df = scales_df[scales_df.bias != 0]
         print(scales_df.to_string() + '\n')
         print(options.fillna('').to_string(index=False) + '\n')
     return
 
-def build_dataframes(nation, doc, excluded):
+def build_dataframes(nation: str, doc: lxml.html.HtmlElement, excluded: Set[str]):
     scales_file = pathlib.Path(nation + '_category_scale.csv')
     assert scales_file.is_file(), scales_file.name
     scales_df = pandas.read_csv(scales_file, names=('census', 'bias'), index_col='census')
-    category_scales = scales_df.to_dict('dict')['bias']
+    category_scales: Dict[str, float] = scales_df.to_dict('dict')['bias']
 
     policies_file = pathlib.Path(nation + '_policy_exclusions.csv')
     if policies_file.is_file():
@@ -130,23 +130,28 @@ def build_dataframes(nation, doc, excluded):
     else:
         excluded_policy_reforms = ()
 
+    extras: List[Dict[str, str]]
     title, *extras = doc.xpath('//title')
     assert not extras
+    assert isinstance(title, lxml.html.HtmlElement)
     print(title.text)
     cols: List[str] = (
         'option,datums,net_result,percent,headline,resigns from,leads to,'
         'adds,removes,sometimes adds,sometimes removes,may add or remove').split(',')
     option_summary = dict(option='0.', datums=None, net_result=0, headline='Dismiss issue.')
     option_list = [option_summary]
-    for result, effects, observations in doc.xpath('//tr')[1:]:
-        option_text, headline = result.text_content().strip().split(' ', 1)
+    elements: Tuple[lxml.html.HtmlElement, lxml.html.HtmlElement, lxml.html.HtmlElement]
+    for elements in doc.xpath('//tr')[1:]:
+        result, effects, observations = elements
+        result_text: str = result.text_content()
+        option_text, headline = result_text.strip().split(' ', 1)
         deltas, unparsed_strs, datums = weigh_option(effects, observations)
         if any(option_text.startswith(option_str) for option_str in excluded):
             weight = -INFINITE
             extras = {}
         else:
             scales_df[option_text] = [deltas.get(category) for category in scales_df.index]
-            weight = sum(category_scales[category] * deltas[category] for category in deltas)
+            weight: float = sum(category_scales[category] * deltas[category] for category in deltas)
             extras = split_unparsed_strings(unparsed_strs)
             if any(reform in unparsed_strs for reform in excluded_policy_reforms):
                 option_text += ' policy reform'
@@ -154,7 +159,7 @@ def build_dataframes(nation, doc, excluded):
             first_row = extras.pop(0)
             cols.extend(key for key in first_row if key not in cols)
         else:
-            first_row = {}
+            first_row: Dict[str, str] = {}
         headline, *unused_extra = headline.replace('@@NAME@@', nation.title()).split('\n')
         option_summary = dict(option=option_text, datums=datums, net_result=weight, headline=headline, **first_row)
         option_list.append(option_summary)
@@ -163,15 +168,15 @@ def build_dataframes(nation, doc, excluded):
             option_list.append(row)
     options = pandas.DataFrame.from_records(option_list)
     options['percent'] = probability_list(options['net_result'])
-    options = options.reindex([col for col in cols if col in options.columns], axis=1)
+    options: pandas.DataFrame = options.reindex([col for col in cols if col in options.columns], axis=1)
     return scales_df, options
 
-def probability_list(pd_series: pandas.Series) -> pandas.Series:
+def probability_list(pd_series: pandas.Series):
     exponents: pandas.Series[float] = EXPONENT_BASE**pd_series
     exp_sum = sum(exp for exp in exponents if not math.isnan(exp))
     probability: pandas.Series[float] = exponents * 100 / exp_sum
     sort_func = lambda prob: abs(round(prob) - prob)
-    probability.sort_values(key=sort_func)
+    probability.sort_values(key=sort_func, inplace=True)
     rounded_list: List[int] = []
     remainder = 100
     for prob in probability:
@@ -188,18 +193,19 @@ def probability_list(pd_series: pandas.Series) -> pandas.Series:
     rounded = pandas.Series(rounded_list, index=probability.index).sort_index()
     return rounded
 
-def weigh_option(effect_col, count_col):
-    effects = effect_col.text_content().strip().splitlines()
-    counts = count_col.text_content().strip().splitlines()
+def weigh_option(effect_col: lxml.html.HtmlElement, count_col: lxml.html.HtmlElement):
+    effects: List[str] = effect_col.text_content().strip().splitlines()
+    counts: List[str] = count_col.text_content().strip().splitlines()
     counts += [''] * (len(effects) - len(counts))
-    results = {}
-    unparsed_strs = []
+    results: Dict[str, float] = {}
+    unparsed_strs: List[str] = []
     min_count = None
     for effect_str, count_str in zip(effects, counts):
         if effect_str.startswith('unknown effect') or count_str == '1':
             continue
         count = int(count_str) if count_str.isdecimal() else 0
-        min_count = count if not min_count or 0 < count < min_count else min_count
+        if min_count is None or 0 < count < min_count:
+            min_count = count
         regular = effect_pattern.search(effect_str)
         simple = simple_pattern.search(effect_str)
         if regular:
@@ -239,6 +245,8 @@ def split_unparsed_strings(unparsed_strs: List[str]) -> List[Dict[str, str]]:
         elif extra:
             behavior = ''
             policy = extra
+        else:
+            continue
         for row in records:
             if behavior not in row:
                 row[behavior] = policy
